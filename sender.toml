@@ -1,0 +1,7 @@
+name = "Example Company LLC"
+address1 = "123 Example St"
+address2 = "City, State 00000"
+license = "License#: 0000000"
+email = "Email: contact@example.com"
+phone = "Tel: 555-0123"
+bank_info = "Bank of Rust | Routing: 123 | Account: 456"

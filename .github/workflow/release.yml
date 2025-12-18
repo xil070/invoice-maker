@@ -1,0 +1,49 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact_name: invoice-maker
+            asset_name: invoice-maker-macos
+          - os: windows-latest
+            artifact_name: invoice-maker.exe
+            asset_name: invoice-maker-windows.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Rename binary (for upload)
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+          else
+            cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+          fi
+
+      - name: Upload binaries to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ matrix.asset_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

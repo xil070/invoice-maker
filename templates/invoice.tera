@@ -1,0 +1,245 @@
+#set page(paper: "us-letter", margin: (x: 2cm, y: 2cm))
+#set text(size: 11pt)
+
+// --- Helper Functions ---
+
+// 1. 金额格式化
+#let fmt_money(amount) = {
+  let s = str(calc.round(amount, digits: 2))
+  if s.contains(".") {
+    let parts = s.split(".")
+    if parts.last().len() < 2 { s + "0" } else { s }
+  } else {
+    s + ".00"
+  }
+}
+
+// 2. 描述文本解析器
+#let parse_desc(text) = {
+  let parts = text.split("\\n")
+  for part in parts {
+    let p = part.trim()
+    if p.starts-with("-") {
+      h(1em) + "• " + p.slice(1).trim() + linebreak()
+    } else {
+      p + linebreak()
+    }
+  }
+}
+
+// --- Main Invoice Layout Function ---
+#let invoice(
+  invoice_id: "", 
+  date: "",
+  sender: (:),
+  client: (:),
+  project: none, 
+  items: (),
+  tax_rate: 0.0, 
+  tax_display: "", 
+  bank_info: none,
+  is_paid: false,
+  is_void: false
+) = {
+  
+  // 2. Header (恢复稳健布局)
+  grid(
+    columns: (1fr, 1fr),
+    gutter: 1em,
+    
+    // 左侧：发送方
+    align(top + left)[
+      *#sender.name* \
+      #v(0.5em)
+      #sender.address1 \
+      #sender.address2 \
+      #sender.license \
+      #sender.phone \
+      #sender.email
+    ],
+    
+    // 右侧：Invoice 信息 (简单右对齐)
+    align(top + right)[
+      #text(2em, weight: "bold", fill: rgb("#333333"))[INVOICE] \
+      #v(3.8em)
+      *Invoice \#:* #invoice_id \
+      *Date:* #date
+    ]
+  )
+  
+  line(length: 100%, stroke: 1pt + rgb("#dddddd"))
+  v(1em)
+
+  // 3. Client & Project Info
+  grid(
+    columns: (1fr, 1fr),
+    gutter: 2em,
+    
+    // Bill To
+    align(left)[
+      #text(weight: "bold", fill: rgb("#666666"))[BILL TO:] \
+      *#client.name* \
+      #if client.attn != none [
+        Attn: #client.attn \
+      ]
+      #if client.address != none [
+        #client.address \
+      ]
+      #if client.email != none [ #client.email ]
+    ],
+    
+    // Project / Site Location
+    align(left)[
+      #if project != none [
+        #text(weight: "bold", fill: rgb("#666666"))[PROJECT / SITE LOCATION:] \
+        #if project.name != none [ *#project.name* \ ]
+        #project.address
+      ]
+    ]
+  )
+  
+  v(2em)
+
+  // 4. Itemized Table
+  let subtotal = 0.0
+  for item in items {
+    subtotal += item.amount
+  }
+  // 这里的 Total 计算仅供显示，实际依赖 Rust 逻辑保证精度，这里做简单乘法
+  let calculated_tax = subtotal * tax_rate
+  let total = subtotal + calculated_tax
+
+  table(
+    columns: (5fr, 1fr),
+    inset: 9pt,
+    align: (left, right),
+    stroke: none,
+    fill: (col, row) => if row == 0 { rgb("#f0f0f0") } else if calc.even(row) { rgb("#f9f9f9") },
+    [*Description*], [*Amount*],
+    ..items.map(item => (
+      parse_desc(item.desc),
+      if item.amount == 0 { "No Charge" } else { "$" + fmt_money(item.amount) }
+    )).flatten()
+  )
+  
+  line(length: 100%, stroke: 1pt + rgb("#dddddd"))
+
+  // 5. Totals Section
+  align(right)[
+    #block(width: 45%, grid(
+      columns: (1fr, 1fr),
+      gutter: 0.8em,
+      align: right,
+      [Subtotal:], [\$#fmt_money(subtotal)],
+      
+      if tax_rate > 0.0 {
+        text("Tax (" + str(calc.round(tax_rate * 100, digits: 3)) + "%):")
+      } else {
+        [Tax:]
+      },
+      
+      [#tax_display],
+      
+      line(length: 100%, stroke: 0.5pt + black),
+      line(length: 100%, stroke: 0.5pt + black),
+      text(1.2em, weight: "bold")[Total:], 
+      text(1.2em, weight: "bold", fill: rgb("#0055aa"))[\$#fmt_money(total)]
+    ))
+  ]
+
+  // 6. Footer (Stacked)
+  v(1fr)
+  
+  line(length: 100%, stroke: 1pt + rgb("#dddddd"))
+  v(1em)
+  
+  [
+  *Payment Information:* \
+  #text(size: 0.9em, fill: rgb("#444444"))[Please make check payable to: #sender.name. \ Mailing Address: #sender.address1, #sender.address2]
+  ]
+
+  if bank_info != none [
+    \ #text(size: 0.9em, fill: rgb("#444444"))[ACH / Direct Deposit: \ #bank_info]
+  ]
+  
+  v(0.5em)
+  align(center, text(size: 8pt, fill: rgb("#999999"))[Thank you for your business!])
+
+  // 1. PAID Stamp
+  if is_paid and not is_void {
+    let stamp_color = rgb("cc0000").transparentize(40%)
+    place(
+      center + horizon,
+      rotate(
+        -30deg,
+        block(
+          stroke: 3pt + stamp_color,
+          radius: 0.5em,
+          inset: 1em,
+          text(fill: stamp_color, size: 5em, weight: "bold")[PAID]
+        )
+      )
+    )
+  }
+
+  // 2. VOID Stamp
+  if is_void {
+    let stamp_color = rgb("555555").transparentize(40%)
+    place(
+      center + horizon,
+      rotate(
+        -30deg,
+        block(
+          stroke: 3pt + stamp_color,
+          radius: 0.5em,
+          inset: 1em,
+          text(fill: stamp_color, size: 5em, weight: "bold")[VOID]
+        )
+      )
+    )
+  }
+}
+
+// --- DATA INJECTION ---
+
+#invoice(
+  invoice_id: "{{ id }}",
+  date: "{{ date }}", 
+  
+  sender: (
+    name: "{{ sender.name }}",
+    address1: "{{ sender.address1 }}",
+    address2: "{{ sender.address2 }}",
+    license: "{{ sender.license }}",
+    email: "{{ sender.email }}",
+    phone: "{{ sender.phone }}"
+  ),
+  
+  client: (
+    name: "{{ client.name }}",
+    attn: {% if client.attn %}"{{ client.attn }}"{% else %}none{% endif %},
+    address: {% if client.billing_address -%}
+      [{{ client.billing_address.street }}
+      {%- if client.billing_address.city != "" %} \ {{ client.billing_address.city }}, {{ client.billing_address.state }} {{ client.billing_address.zip }}{% endif -%}]
+    {%- else -%}none{%- endif %},
+    email: {% if client.email %}"{{ client.email }}"{% else %}none{% endif %}
+  ),
+
+  project: (
+    name: {% if project.name %}"{{ project.name }}"{% else %}none{% endif %},
+    address: [{{ project.address.street }}
+      {%- if project.address.city != "" %} \ {{ project.address.city }}, {{ project.address.state }} {{ project.address.zip }}{% endif -%}]
+  ),
+  
+  items: (
+    {% for item in items %}
+    (desc: "{{ item.description }}", amount: {{ item.amount }}),
+    {% endfor %}
+  ),
+  
+  tax_rate: {{ tax_rate }},
+  tax_display: "{{ tax_display }}",
+  bank_info: "{{ sender.bank_info }}",
+  is_paid: {{ is_paid }},
+  is_void: {{ is_void }}
+)
