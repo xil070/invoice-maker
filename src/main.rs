@@ -61,7 +61,10 @@ enum Commands {
     /// Open output folder
     Open,
     /// Show summary of invoices
-    Summary,
+    Summary {
+        /// Year to summarize (defaults to current year)
+        year: Option<i32>,
+    },
     /// Void an invoice
     Void,
 }
@@ -141,8 +144,8 @@ fn main() {
         Commands::Open => {
             open_folder_wizard(&root);
         }
-        Commands::Summary => {
-            show_summary(&root);
+        Commands::Summary { year } => {
+            show_summary(&root, year);
         }
         Commands::Void => {
             void_invoice(&root);
@@ -916,14 +919,15 @@ struct InvoiceInfo {
     client: String,
 }
 
-fn show_summary(root: &Path) {
+fn show_summary(root: &Path, year: Option<i32>) {
     let output_dir = root.join("output");
     if !output_dir.exists() {
         println!("❌ No output directory found. No invoices to summarize.");
         return;
     }
 
-    println!("🔍 Scanning invoices for summary...");
+    let target_year = year.unwrap_or_else(|| Local::now().year());
+    println!("🔍 Scanning invoices for summary (Year: {})...", target_year);
 
     // 1. Recursively find all .typ files
     let mut typ_files = Vec::new();
@@ -967,16 +971,12 @@ fn show_summary(root: &Path) {
     }
 
     // 3. Group by month and calculate totals
-    let today = Local::now().date_naive();
-    // Fix: Handle leap years correctly by subtracting days instead of just changing year
-    let one_year_ago = today - chrono::Duration::days(365);
-
     // Key: (Year, Month), Value: (Paid, Unpaid)
     let mut monthly_totals: BTreeMap<(i32, u32), (f64, f64)> = BTreeMap::new();
     // Key: Client Name, Value: (Paid, Unpaid)
     let mut client_totals: BTreeMap<String, (f64, f64)> = BTreeMap::new();
 
-    for info in invoice_infos.iter().filter(|i| i.date >= one_year_ago) {
+    for info in invoice_infos.iter().filter(|i| i.date.year() == target_year) {
         // Monthly Aggregation
         let month_key = (info.date.year(), info.date.month());
         let entry = monthly_totals.entry(month_key).or_insert((0.0, 0.0));
@@ -1048,13 +1048,13 @@ fn show_summary(root: &Path) {
     };
 
     table.add_row(vec![
-        Cell::new("Total (Last 12 Months)").add_attribute(Attribute::Bold),
+        Cell::new(format!("Total ({})", target_year)).add_attribute(Attribute::Bold),
         total_paid_cell,
         total_unpaid_cell,
         Cell::new(format!("${:.2}", total_paid + total_unpaid)).add_attribute(Attribute::Bold),
     ]);
 
-    println!("\n--- Monthly Invoice Summary (Last 12 Months) ---");
+    println!("\n--- Monthly Invoice Summary ({}) ---", target_year);
     println!("{table}");
 
     // 5. Client Summary Table
@@ -1093,7 +1093,7 @@ fn show_summary(root: &Path) {
         ]);
     }
 
-    println!("\n--- Client Summary (Last 12 Months) ---");
+    println!("\n--- Client Summary ({}) ---", target_year);
     println!("{client_table}");
 }
 
