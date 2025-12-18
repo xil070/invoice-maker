@@ -848,6 +848,7 @@ fn load_sender_config(root: &Path) -> SenderConfig {
     }
 }
 
+
 fn setup_config_wizard() -> AppSettings {
     println!("\n⚙️  --- Configuration Setup ---");
     let current = load_settings();
