@@ -65,6 +65,8 @@ enum Commands {
         /// Year to summarize (defaults to current year)
         year: Option<i32>,
     },
+    /// Search invoices (type to filter by path, client, project, description, amount)
+    Search,
     /// Void an invoice
     Void,
 }
@@ -143,6 +145,9 @@ fn main() {
         }
         Commands::Open => {
             open_folder_wizard(&root);
+        }
+        Commands::Search => {
+            search_invoices(&root);
         }
         Commands::Summary { year } => {
             show_summary(&root, year);
@@ -813,6 +818,105 @@ fn open_folder_wizard(root: &Path) {
             Command::new("explorer").arg(&target_path).spawn().ok();
         },
         Err(_) => println!("Operation cancelled."),
+    }
+}
+
+// ==========================================
+// Search Logic
+// ==========================================
+
+fn search_invoices(root: &Path) {
+    let output_root = root.join("output");
+    if !output_root.exists() {
+        println!("❌ No output directory found.");
+        return;
+    }
+
+    println!("🔍 Loading invoices...");
+
+    // Gather all .typ files
+    let mut typ_files = Vec::new();
+    let mut stack = vec![output_root.clone()];
+    while let Some(dir) = stack.pop() {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().map_or(false, |e| e == "typ") {
+                    typ_files.push(path);
+                }
+            }
+        }
+    }
+
+    if typ_files.is_empty() {
+        println!("No invoices found.");
+        return;
+    }
+
+    // Build searchable entries: (display_string, path)
+    // Display string includes all searchable info so Select's built-in filter works
+    let client_re = Regex::new(r#"client:\s*\(\s*name:\s*"([^"]+)""#).unwrap();
+    let project_re = Regex::new(r#"project:\s*\([^)]*address:\s*\[([^\]]+)\]"#).unwrap();
+    let desc_re = Regex::new(r#"desc:\s*"([^"]+)""#).unwrap();
+    let amount_re = Regex::new(r"amount:\s*([\d\.]+)").unwrap();
+
+    let mut entries: Vec<(String, PathBuf)> = Vec::new();
+
+    for path in typ_files {
+        let rel_path = path.strip_prefix(&output_root).unwrap_or(&path).to_string_lossy().to_string();
+        
+        let mut search_parts = vec![rel_path.clone()];
+
+        if let Ok(content) = fs::read_to_string(&path) {
+            // Extract client name
+            if let Some(cap) = client_re.captures(&content) {
+                search_parts.push(cap[1].to_string());
+            }
+            // Extract project address
+            if let Some(cap) = project_re.captures(&content) {
+                search_parts.push(cap[1].replace("\\", " ").replace("  ", " "));
+            }
+            // Extract all descriptions
+            for cap in desc_re.captures_iter(&content) {
+                search_parts.push(cap[1].to_string());
+            }
+            // Extract all amounts
+            for cap in amount_re.captures_iter(&content) {
+                search_parts.push(format!("${}", &cap[1]));
+            }
+        }
+
+        // Build display: "path | client | project | desc... | $amt"
+        let display = search_parts.join(" | ");
+        entries.push((display, path));
+    }
+
+    // Sort by modified time desc
+    entries.sort_by_key(|(_, p)| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    entries.reverse();
+
+    let options: Vec<String> = entries.iter().map(|(d, _)| d.clone()).collect();
+
+    // Use Select with real-time type-to-filter
+    let selection = Select::new("Search Invoice (type to filter):", options.clone())
+        .with_page_size(15)
+        .prompt();
+
+    match selection {
+        Ok(choice) => {
+            if let Some(pos) = options.iter().position(|o| o == &choice) {
+                let path = &entries[pos].1;
+                let pdf_path = path.with_extension("pdf");
+                if pdf_path.exists() {
+                    open_and_reveal(&pdf_path);
+                } else {
+                    open_and_reveal(path);
+                }
+            }
+        },
+        Err(_) => println!("Cancelled"),
     }
 }
 
