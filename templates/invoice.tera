@@ -159,7 +159,7 @@
   ]
 
   if bank_info != none [
-    \ #text(size: 0.9em, fill: rgb("#444444"))[ACH / Direct Deposit: \ #bank_info]
+    \ #text(size: 0.9em, fill: rgb("#444444"))[ACH: #bank_info]
   ]
   
   v(0.5em)
