@@ -69,6 +69,8 @@ enum Commands {
     Search,
     /// Void an invoice
     Void,
+    /// Check for updates and update the binary
+    Update,
 }
 
 // ==========================================
@@ -154,6 +156,9 @@ fn main() {
         }
         Commands::Void => {
             void_invoice(&root);
+        }
+        Commands::Update => {
+            check_and_update();
         }
     }
 }
@@ -1248,4 +1253,259 @@ fn parse_invoice_total(path: &Path) -> Result<(f64, bool, String), std::io::Erro
     };
 
     Ok((subtotal * (1.0 + tax_rate), is_paid, client_name))
+}
+
+// ==========================================
+// Update Function
+// ==========================================
+
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const GITHUB_REPO: &str = "xil070/invoice-maker";
+const DEFAULT_INSTALL_PATH: &str = "/usr/local/bin/im";
+
+#[derive(Debug, Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    assets: Vec<GitHubAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+fn check_and_update() {
+    println!("🔍 Checking for updates...");
+    println!("   Current version: v{}", CURRENT_VERSION);
+
+    // Fetch latest release from GitHub API
+    let api_url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("invoice-maker-updater")
+        .build()
+        .expect("Failed to create HTTP client");
+
+    let response = match client.get(&api_url).send() {
+        Ok(resp) => resp,
+        Err(e) => {
+            eprintln!("❌ Failed to check for updates: {}", e);
+            return;
+        }
+    };
+
+    if !response.status().is_success() {
+        eprintln!("❌ Failed to fetch release info: HTTP {}", response.status());
+        return;
+    }
+
+    let release: GitHubRelease = match response.json() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("❌ Failed to parse release info: {}", e);
+            return;
+        }
+    };
+
+    // Parse versions for comparison
+    let latest_version = release.tag_name.trim_start_matches('v');
+    println!("   Latest version:  v{}", latest_version);
+
+    let current = match semver::Version::parse(CURRENT_VERSION) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("❌ Failed to parse current version");
+            return;
+        }
+    };
+
+    let latest = match semver::Version::parse(latest_version) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("❌ Failed to parse latest version");
+            return;
+        }
+    };
+
+    if current >= latest {
+        println!("✅ You're already on the latest version!");
+        return;
+    }
+
+    println!("\n🆕 New version available: v{} -> v{}", CURRENT_VERSION, latest_version);
+
+    // Find the macOS zip asset
+    let zip_asset = release.assets.iter().find(|a| {
+        let name = a.name.to_lowercase();
+        name.contains("macos") || name.contains("darwin") || name.ends_with(".zip")
+    });
+
+    let asset = match zip_asset {
+        Some(a) => a,
+        None => {
+            eprintln!("❌ No compatible release asset found");
+            println!("   Available assets:");
+            for a in &release.assets {
+                println!("   - {}", a.name);
+            }
+            return;
+        }
+    };
+
+    // Ask for confirmation
+    let confirm = Confirm::new(&format!("Download and install v{}?", latest_version))
+        .with_default(true)
+        .prompt()
+        .unwrap_or(false);
+
+    if !confirm {
+        println!("⏸️  Update cancelled.");
+        return;
+    }
+
+    // Ask for install path
+    let install_path = Text::new("Install path:")
+        .with_default(DEFAULT_INSTALL_PATH)
+        .prompt()
+        .unwrap();
+
+    let install_path = expand_home_dir(&install_path);
+    let install_path = PathBuf::from(&install_path);
+
+    // Download the zip file
+    println!("📥 Downloading {}...", asset.name);
+    
+    let zip_response = match client.get(&asset.browser_download_url).send() {
+        Ok(resp) => resp,
+        Err(e) => {
+            eprintln!("❌ Failed to download: {}", e);
+            return;
+        }
+    };
+
+    if !zip_response.status().is_success() {
+        eprintln!("❌ Download failed: HTTP {}", zip_response.status());
+        return;
+    }
+
+    let zip_bytes = match zip_response.bytes() {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("❌ Failed to read download: {}", e);
+            return;
+        }
+    };
+
+    // Extract the binary from zip
+    println!("📦 Extracting...");
+    
+    let reader = std::io::Cursor::new(zip_bytes);
+    let mut archive = match zip::ZipArchive::new(reader) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("❌ Failed to open zip: {}", e);
+            return;
+        }
+    };
+
+    // Find the binary in the zip (typically named invoice-maker or im)
+    let mut binary_data: Option<Vec<u8>> = None;
+    
+    for i in 0..archive.len() {
+        let mut file = match archive.by_index(i) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        
+        let name = file.name().to_lowercase();
+        if name.contains("invoice-maker") || name == "im" {
+            if !name.ends_with('/') && !name.contains('.') || name.ends_with("invoice-maker") {
+                let mut data = Vec::new();
+                std::io::Read::read_to_end(&mut file, &mut data).ok();
+                binary_data = Some(data);
+                println!("   Found binary: {}", file.name());
+                break;
+            }
+        }
+    }
+
+    let binary_data = match binary_data {
+        Some(d) => d,
+        None => {
+            eprintln!("❌ Could not find binary in zip archive");
+            println!("   Archive contents:");
+            for i in 0..archive.len() {
+                if let Ok(file) = archive.by_index(i) {
+                    println!("   - {}", file.name());
+                }
+            }
+            return;
+        }
+    };
+
+    // Write the new binary
+    println!("📝 Installing to {}...", install_path.display());
+
+    // Create parent directory if needed
+    if let Some(parent) = install_path.parent() {
+        if !parent.exists() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                eprintln!("❌ Failed to create directory: {}", e);
+                return;
+            }
+        }
+    }
+
+    // Write binary (may need sudo for /usr/local/bin)
+    match fs::write(&install_path, &binary_data) {
+        Ok(_) => {}
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                println!("⚠️  Permission denied. Trying with sudo...");
+                
+                // Write to temp file first
+                let temp_path = std::env::temp_dir().join("im_update_temp");
+                if let Err(e) = fs::write(&temp_path, &binary_data) {
+                    eprintln!("❌ Failed to write temp file: {}", e);
+                    return;
+                }
+                
+                // Use sudo to move the file
+                let status = Command::new("sudo")
+                    .args(["mv", temp_path.to_str().unwrap(), install_path.to_str().unwrap()])
+                    .status();
+                
+                match status {
+                    Ok(s) if s.success() => {
+                        // Set executable permissions
+                        let _ = Command::new("sudo")
+                            .args(["chmod", "+x", install_path.to_str().unwrap()])
+                            .status();
+                    }
+                    _ => {
+                        eprintln!("❌ Failed to install with sudo");
+                        return;
+                    }
+                }
+            } else {
+                eprintln!("❌ Failed to write binary: {}", e);
+                return;
+            }
+        }
+    }
+
+    // Set executable permission
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&install_path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&install_path, perms);
+        }
+    }
+
+    println!("✅ Successfully updated to v{}!", latest_version);
+    println!("   Installed at: {}", install_path.display());
 }
