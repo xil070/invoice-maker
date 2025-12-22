@@ -1116,13 +1116,15 @@ fn show_summary(root: &Path, year: Option<i32>) {
         let total = paid + unpaid;
 
         let unpaid_cell = if *unpaid > 0.0 {
-            Cell::new(format!("${:.2}", unpaid)).fg(Color::Rgb { r: 185, g: 28, b: 28 })
+            // Cell::new(format!("${:.2}", unpaid)).fg(Color::Rgb { r: 185, g: 28, b: 28 })
+            Cell::new(format!("${:.2}", unpaid)).fg(Color::Red)
         } else {
             Cell::new(format!("${:.2}", unpaid))
         };
 
         let paid_cell = if *paid > 0.0 {
-            Cell::new(format!("${:.2}", paid)).fg(Color::Rgb { r: 4, g: 120, b: 87 })
+            // Cell::new(format!("${:.2}", paid)).fg(Color::Rgb { r: 4, g: 120, b: 87 })
+            Cell::new(format!("${:.2}", paid)).fg(Color::Green)
         } else {
             Cell::new(format!("${:.2}", paid))
         };
@@ -1139,14 +1141,16 @@ fn show_summary(root: &Path, year: Option<i32>) {
 
     let total_unpaid_cell = Cell::new(format!("${:.2}", total_unpaid)).add_attribute(Attribute::Bold);
     let total_unpaid_cell = if total_unpaid > 0.0 {
-        total_unpaid_cell.fg(Color::Rgb { r: 185, g: 28, b: 28 })
+        // total_unpaid_cell.fg(Color::Rgb { r: 185, g: 28, b: 28 })
+        total_unpaid_cell.fg(Color::Red)
     } else {
         total_unpaid_cell
     };
 
     let total_paid_cell = Cell::new(format!("${:.2}", total_paid)).add_attribute(Attribute::Bold);
     let total_paid_cell = if total_paid > 0.0 {
-        total_paid_cell.fg(Color::Rgb { r: 4, g: 120, b: 87 })
+        // total_paid_cell.fg(Color::Rgb { r: 4, g: 120, b: 87 })
+        total_paid_cell.fg(Color::Green)
     } else {
         total_paid_cell
     };
@@ -1178,13 +1182,15 @@ fn show_summary(root: &Path, year: Option<i32>) {
         let total = paid + unpaid;
 
         let unpaid_cell = if unpaid > 0.0 {
-            Cell::new(format!("${:.2}", unpaid)).fg(Color::Rgb { r: 185, g: 28, b: 28 })
+            // Cell::new(format!("${:.2}", unpaid)).fg(Color::Rgb { r: 185, g: 28, b: 28 })
+            Cell::new(format!("${:.2}", unpaid)).fg(Color::Red)
         } else {
             Cell::new(format!("${:.2}", unpaid))
         };
 
         let paid_cell = if paid > 0.0 {
-            Cell::new(format!("${:.2}", paid)).fg(Color::Rgb { r: 4, g: 120, b: 87 })
+            // Cell::new(format!("${:.2}", paid)).fg(Color::Rgb { r: 4, g: 120, b: 87 })
+            Cell::new(format!("${:.2}", paid)).fg(Color::Green)
         } else {
             Cell::new(format!("${:.2}", paid))
         };
