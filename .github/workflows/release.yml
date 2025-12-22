@@ -17,10 +17,10 @@ jobs:
         include:
           - os: macos-latest
             artifact_name: invoice-maker
-            asset_name: invoice-maker-macos
+            asset_name: invoice-maker-macos.zip
           - os: windows-latest
             artifact_name: invoice-maker.exe
-            asset_name: invoice-maker-windows.exe
+            asset_name: invoice-maker-windows.zip
 
     steps:
       - name: Checkout code
@@ -32,13 +32,13 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Rename binary (for upload)
+      - name: Package binary (zip)
         shell: bash
         run: |
           if [ "${{ runner.os }}" == "Windows" ]; then
-            cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+            7z a ${{ matrix.asset_name }} ./target/release/${{ matrix.artifact_name }}
           else
-            cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+            zip -j ${{ matrix.asset_name }} ./target/release/${{ matrix.artifact_name }}
           fi
 
       - name: Upload binaries to Release
